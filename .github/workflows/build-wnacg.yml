@@ -39,13 +39,51 @@ jobs:
         with:
           cache-read-only: true
 
+      # Missing secrets must fail the build; never fall back to runner-specific debug signing.
+      - name: Restore persistent signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for key in SIGNING_KEY ALIAS KEY_STORE_PASSWORD KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing GitHub Actions secret: $key. Run .github/scripts/setup-wnacg-signing.sh once on your machine."
+              exit 1
+            fi
+          done
+          printf '%s' "$SIGNING_KEY" | base64 --decode > signingkey.jks
+          test -s signingkey.jks
+          keytool -list -keystore signingkey.jks -storepass "$KEY_STORE_PASSWORD" -alias "$ALIAS" > /dev/null
+
       - name: Assemble and lint only WNACG
+        env:
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew :src:zh:wnacg:assembleRelease :src:zh:wnacg:lintRelease
+
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          apk=$(find src/zh/wnacg/build/outputs/apk/release -type f -name '*.apk' -print -quit)
+          test -n "$apk"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$sdk_root"
+          signer=$(find "$sdk_root/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$signer"
+          "$signer" verify --print-certs "$apk"
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f signingkey.jks
 
       - name: Upload installable test APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: WNACG-1.6.5-test-APK
+          name: WNACG-1.6.6-signed-APK
           path: src/zh/wnacg/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 3
