@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.source.KeiSource
@@ -55,12 +56,26 @@ abstract class ManwaShizuku :
         return mirror?.takeIf { it.startsWith("https://") && it.toHttpUrlOrNull() != null } ?: MIRROR_URLS[0]
     }
 
+    // Request browser-style image headers for both covers and chapter pages.
+    override val imageFetch: Fetch = Fetch.IMAGE
+
     override fun OkHttpClient.Builder.configureClient() = addInterceptor(rewriteOctetStream)
 
     private val rewriteOctetStream: Interceptor = Interceptor { chain ->
-        val response: Response = chain.proceed(chain.request())
-        val imageHost = preferences.getString(IMAGE_HOST_KEY, IMAGE_HOST_ENTRIES[0])!!.substringBefore(":")
-        if (response.request.url.host != imageHost || !response.request.url.encodedPath.endsWith(".jpg", ignoreCase = true) || !response.isSuccessful) {
+        val request = chain.request()
+        val isImageHost = IMAGE_HOST_ENTRIES.any { it.substringBefore(":") == request.url.host }
+
+        // The CDN can reject non-browser requests before the decryptor sees the body.
+        val imageRequest = if (isImageHost) {
+            request.newBuilder()
+                .header("User-Agent", IMAGE_USER_AGENT)
+                .header("Referer", "$baseUrl/")
+                .build()
+        } else {
+            request
+        }
+        val response: Response = chain.proceed(imageRequest)
+        if (!isImageHost || !response.request.url.encodedPath.endsWith(".jpg", ignoreCase = true) || !response.isSuccessful) {
             return@Interceptor response
         }
         // Chapter images can be AES-encrypted, but covers can be ordinary images.
@@ -199,6 +214,9 @@ abstract class ManwaShizuku :
     }
 
     companion object {
+        private const val IMAGE_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36"
+
         private val MIRROR_URLS = arrayOf(
             "https://manwadz.cc",
             "https://mwmwbu.cc",
