@@ -6,6 +6,7 @@ import android.text.InputType
 import android.widget.Toast
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
+import androidx.preference.Preference
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
 import keiyoushi.utils.parseAs
@@ -16,23 +17,65 @@ import okhttp3.Response
 import java.io.IOException
 
 private const val DEFAULT_LIST = "https://www.wn10.cfd,https://www.wn07.shop"
+private const val AUTO_URL_OPTION = "__auto__"
+private const val CUSTOM_URL_OPTION = "__custom__"
+
 
 fun getPreferencesInternal(
     context: Context,
     preferences: SharedPreferences,
     isUrlUpdated: Boolean,
-) = arrayOf(
-    ListPreference(context).apply {
-        key = URL_INDEX_PREF
-        title = "网址"
-        summary = if (isUrlUpdated) "%s\n网址已自动更新，请重启应用。" else "%s\n正常情况下会自动更新。重启生效。"
+): Array<Preference> {
+    val selectedUrl = preferences.getString(URL_SELECTION_PREF, null)
+        ?.takeUnless { it == AUTO_URL_OPTION || it == CUSTOM_URL_OPTION }
+        ?.toValidBaseUrlOrNull()
+    // Keep a manually selected mirror visible even when the remote list changes.
+    val availableUrls = (preferences.urlList + listOfNotNull(selectedUrl)).distinct()
 
-        val options = preferences.urlList
-        val count = options.size
-        entries = options.toTypedArray()
-        entryValues = Array(count, Int::toString)
-    },
+    val urlPreference = ListPreference(context).apply {
+        key = URL_SELECTION_PREF
+        title = "网站网址"
+        entries = (listOf("自动选择（随网站更新）") + availableUrls + "自定义网址").toTypedArray()
+        entryValues = (listOf(AUTO_URL_OPTION) + availableUrls + CUSTOM_URL_OPTION).toTypedArray()
+        summary = if (isUrlUpdated) "%s\\n网址列表已自动更新，请重启应用。" else "%s\\n切换网址后请重启应用。"
+        setDefaultValue(AUTO_URL_OPTION)
+        setOnPreferenceChangeListener { _, value ->
+            if (value == CUSTOM_URL_OPTION && preferences.customBaseUrl == null) {
+                Toast.makeText(context, "请先在下方输入自定义网址。", Toast.LENGTH_SHORT).show()
+                false
+            } else {
+                true
+            }
+        }
+    }
 
+    val customUrlPreference = EditTextPreference(context).apply {
+        key = CUSTOM_URL_PREF
+        title = "自定义网址"
+        dialogTitle = "输入网站网址"
+        summary = customUrlSummary(preferences.customBaseUrl)
+        setOnBindEditTextListener { editText ->
+            editText.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            editText.setSingleLine(true)
+            editText.hint = "https://www.wn10.cfd"
+        }
+        setOnPreferenceChangeListener { _, value ->
+            val normalizedUrl = (value as String).toValidBaseUrlOrNull()
+            if (normalizedUrl == null) {
+                Toast.makeText(context, "请输入有效的 HTTPS 网址（仅域名，不含路径）。", Toast.LENGTH_LONG).show()
+                false
+            } else {
+                summary = customUrlSummary(normalizedUrl)
+                // Entering a valid custom URL selects it immediately; restart to apply.
+                urlPreference.value = CUSTOM_URL_OPTION
+                true
+            }
+        }
+    }
+
+    return arrayOf(
+        urlPreference,
+        customUrlPreference,
     EditTextPreference(context).apply {
         key = TITLE_BLACKLIST_PREF
         title = "标题屏蔽关键词"
@@ -73,18 +116,33 @@ fun getPreferencesInternal(
         setDefaultValue(true)
     },
 )
+}
+
 
 val SharedPreferences.baseUrl: String
     get() {
-        val list = urlList
-        return list.getOrNull(urlIndex) ?: list[0]
+        val mirrors = urlList
+        return when (val selected = getString(URL_SELECTION_PREF, AUTO_URL_OPTION)) {
+            AUTO_URL_OPTION -> mirrors.first()
+            CUSTOM_URL_OPTION -> customBaseUrl ?: mirrors.first()
+            else -> selected?.toValidBaseUrlOrNull() ?: mirrors.first()
+        }
     }
 
-val SharedPreferences.urlIndex get() = getString(URL_INDEX_PREF, "-1")!!.toInt()
-val SharedPreferences.urlList get() = getString(URL_LIST_PREF, DEFAULT_LIST)
-    .orEmpty()
-    .toValidUrlList()
-    .ifEmpty { DEFAULT_LIST.toValidUrlList() }
+private val SharedPreferences.customBaseUrl: String?
+    get() = getString(CUSTOM_URL_PREF, null)?.toValidBaseUrlOrNull()
+
+private val SharedPreferences.isAutomaticUrl: Boolean
+    get() = getString(URL_SELECTION_PREF, AUTO_URL_OPTION) == AUTO_URL_OPTION
+
+private val SharedPreferences.legacyUrlIndex: Int
+    get() = getString(URL_INDEX_PREF, "-1")?.toIntOrNull() ?: -1
+
+val SharedPreferences.urlList: List<String>
+    get() = getString(URL_LIST_PREF, DEFAULT_LIST)
+        .orEmpty()
+        .toValidUrlList()
+        .ifEmpty { DEFAULT_LIST.toValidUrlList() }
 
 var SharedPreferences.extraCategories: List<Pair<String, String>>
     get() = getString(EXTRA_CATEGORIES_PREF, null)?.parseAs<List<Pair<String, String>>>().orEmpty()
@@ -106,30 +164,32 @@ val SharedPreferences.blacklistMaxScanPages: Int
         ?.takeIf { it >= 1 }
         ?: DEFAULT_MAX_SCAN_PAGES
 
+private fun customUrlSummary(url: String?) = url?.let { "$it\\n保存后自动使用此网址，重启应用生效。" }
+    ?: "尚未设置。请输入完整的 HTTPS 网址，或直接输入域名。"
+
 private fun titleBlacklistSummary(value: String?) = value?.takeIf(String::isNotBlank)?.let { "$it\n$TITLE_BLACKLIST_SUMMARY" }
     ?: TITLE_BLACKLIST_SUMMARY
 
 private fun maxScanPagesSummary(value: Int) = "当前值：$value\n$BLACKLIST_MAX_SCAN_PAGES_SUMMARY"
 
+
 fun SharedPreferences.preferenceMigration() {
-    if (getString(DEFAULT_LIST_PREF, "")!! != DEFAULT_LIST) {
-        val selectedUrl = urlList.getOrNull(urlIndex)
-        edit()
-            .remove("overrideBaseUrl")
-            .putString(DEFAULT_LIST_PREF, DEFAULT_LIST)
-            .setUrlList(DEFAULT_LIST, selectedUrl)
-            .apply()
-    }
-}
+    val previousSelection = getString(URL_SELECTION_PREF, null)
+    val defaultListChanged = getString(DEFAULT_LIST_PREF, null) != DEFAULT_LIST
+    if (previousSelection != null && !defaultListChanged) return
 
-fun SharedPreferences.Editor.setUrlList(urlList: String, selectedUrl: String?): SharedPreferences.Editor {
-    val validUrlList = urlList.toValidUrlList()
-    require(validUrlList.isNotEmpty())
-
-    putString(URL_LIST_PREF, validUrlList.joinToString(","))
-    val selectedIndex = validUrlList.indexOf(selectedUrl)
-    val newIndex = selectedIndex.takeIf { it >= 0 } ?: 0
-    return putString(URL_INDEX_PREF, newIndex.toString())
+    // Import the mirror choice made in older versions before replacing the old list.
+    val previouslySelectedUrl = urlList.getOrNull(legacyUrlIndex)
+    edit().apply {
+        if (previousSelection == null) {
+            putString(URL_SELECTION_PREF, previouslySelectedUrl ?: AUTO_URL_OPTION)
+        }
+        if (defaultListChanged) {
+            putString(DEFAULT_LIST_PREF, DEFAULT_LIST)
+            putString(URL_LIST_PREF, DEFAULT_LIST)
+            remove("overrideBaseUrl")
+        }
+    }.apply()
 }
 
 class UpdateUrlInterceptor(private val preferences: SharedPreferences) : Interceptor {
@@ -146,7 +206,7 @@ class UpdateUrlInterceptor(private val preferences: SharedPreferences) : Interce
             response
         } catch (e: IOException) {
             if (chain.call().isCanceled()) throw e
-            if (isUpdated || updateUrl(chain)) {
+            if (preferences.isAutomaticUrl && (isUpdated || updateUrl(chain))) {
                 throw IOException("网址已自动更新，请重启应用", e)
             }
             throw e
@@ -158,7 +218,7 @@ class UpdateUrlInterceptor(private val preferences: SharedPreferences) : Interce
         if (statusCode == 404 && isLoginOnlyPath(request.url.encodedPath)) {
             throw IOException(LOGIN_HINT)
         }
-        if (isUpdated || updateUrl(chain)) {
+        if (preferences.isAutomaticUrl && (isUpdated || updateUrl(chain))) {
             throw IOException("网址已自动更新，请重启应用")
         }
         throw IOException("请求失败：HTTP $statusCode")
@@ -173,12 +233,10 @@ class UpdateUrlInterceptor(private val preferences: SharedPreferences) : Interce
                 val newList = it.body.string().toValidUrlList()
                 if (newList.isEmpty() || newList == preferences.urlList) return false
 
-                val selectedUrl = preferences.urlList.getOrNull(preferences.urlIndex)
-                preferences.edit()
-                    .setUrlList(newList.joinToString(","), selectedUrl)
-                    .apply()
-                isUpdated = true
-                true
+                val urlChanged = newList.first() != preferences.baseUrl
+                preferences.edit().putString(URL_LIST_PREF, newList.joinToString(",")).apply()
+                isUpdated = urlChanged
+                urlChanged
             }
         } catch (e: IOException) {
             if (chain.call().isCanceled()) throw e
@@ -187,9 +245,20 @@ class UpdateUrlInterceptor(private val preferences: SharedPreferences) : Interce
     }
 }
 
+// Allow a bare hostname in the custom field; always use HTTPS and a root URL.
+private fun String.toValidBaseUrlOrNull(): String? {
+    val input = trim()
+    if (input.isEmpty()) return null
+    val parsed = (if ("://" in input) input else "https://$input").toHttpUrlOrNull() ?: return null
+    if (parsed.scheme != "https" || parsed.username.isNotEmpty() || parsed.password.isNotEmpty() ||
+        parsed.encodedPath != "/" || parsed.query != null || parsed.fragment != null
+    ) return null
+    return parsed.toString().removeSuffix("/")
+}
+
 private fun String.toValidUrlList(): List<String> = split(',')
-    .map(String::trim)
-    .filter { it.toHttpUrlOrNull() != null }
+    .mapNotNull(String::toValidBaseUrlOrNull)
+    .distinct()
 
 // Guests get 404 on some galleries and on login-only categories
 private fun isLoginOnlyPath(path: String) = path.startsWith("/photos-") || unlistedCategoryId(path) != null
@@ -198,7 +267,9 @@ const val LOGIN_HINT = "内容不存在或需要登录，请在 WebView 中登�
 
 private const val DEFAULT_LIST_PREF = "defaultBaseUrl"
 private const val URL_LIST_PREF = "baseUrlList"
-private const val URL_INDEX_PREF = "baseUrlIndex"
+private const val URL_INDEX_PREF = "baseUrlIndex" // legacy migration only
+private const val URL_SELECTION_PREF = "baseUrlSelection"
+private const val CUSTOM_URL_PREF = "customBaseUrl"
 private const val EXTRA_CATEGORIES_PREF = "extraCategories"
 private const val TITLE_BLACKLIST_PREF = "titleBlacklist"
 private const val BLACKLIST_MAX_SCAN_PAGES_PREF = "blacklistMaxScanPages"
