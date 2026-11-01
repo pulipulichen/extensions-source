@@ -63,7 +63,21 @@ abstract class ManwaShizuku :
         if (response.request.url.host != imageHost || !response.request.url.encodedPath.endsWith(".jpg", ignoreCase = true) || !response.isSuccessful) {
             return@Interceptor response
         }
-        // Cover images are ordinary JPEGs, while chapter images may be AES-encrypted.\n        // Inspect the response magic bytes before attempting decryption.\n        val source = response.body.source()\n        source.request(16)\n        val prefix = source.buffer.snapshot().toByteArray()\n        if (prefix.size < 16 ||\n            (prefix[0] == 0xFF.toByte() && prefix[1] == 0xD8.toByte()) ||\n            (prefix[0] == 0x89.toByte() && prefix[1] == 0x50.toByte() && prefix[2] == 0x4E.toByte() && prefix[3] == 0x47.toByte()) ||\n            (prefix[0] == 0x52.toByte() && prefix[1] == 0x49.toByte() && prefix[2] == 0x46.toByte() && prefix[3] == 0x46.toByte() && prefix[8] == 0x57.toByte() && prefix[9] == 0x45.toByte() && prefix[10] == 0x42.toByte() && prefix[11] == 0x50.toByte())\n        ) return@Interceptor response
+        // Chapter images can be AES-encrypted, but covers can be ordinary images.
+        // Preserve known image formats without attempting decryption.
+        val source = response.body.source()
+        source.request(16)
+        val prefix = source.buffer.snapshot().toByteArray()
+        val isJpeg = prefix.size >= 2 && prefix[0] == 0xFF.toByte() && prefix[1] == 0xD8.toByte()
+        val isPng = prefix.size >= 4 &&
+            prefix[0] == 0x89.toByte() && prefix[1] == 0x50.toByte() &&
+            prefix[2] == 0x4E.toByte() && prefix[3] == 0x47.toByte()
+        val isWebp = prefix.size >= 12 &&
+            prefix[0] == 0x52.toByte() && prefix[1] == 0x49.toByte() &&
+            prefix[2] == 0x46.toByte() && prefix[3] == 0x46.toByte() &&
+            prefix[8] == 0x57.toByte() && prefix[9] == 0x45.toByte() &&
+            prefix[10] == 0x42.toByte() && prefix[11] == 0x50.toByte()
+        if (prefix.size < 16 || isJpeg || isPng || isWebp) return@Interceptor response
         val iv = source.readByteArray(16)
         val key = SecretKeySpec("0B6666A0-BB59-1381-B746-a0E4C9AC".toByteArray(), "AES")
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
