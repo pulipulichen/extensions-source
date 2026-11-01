@@ -20,7 +20,6 @@ private const val DEFAULT_LIST = "https://www.wn10.cfd,https://www.wn07.shop"
 private const val AUTO_URL_OPTION = "__auto__"
 private const val CUSTOM_URL_OPTION = "__custom__"
 
-
 fun getPreferencesInternal(
     context: Context,
     preferences: SharedPreferences,
@@ -37,7 +36,7 @@ fun getPreferencesInternal(
         title = "网站网址"
         entries = (listOf("自动选择（随网站更新）") + availableUrls + "自定义网址").toTypedArray()
         entryValues = (listOf(AUTO_URL_OPTION) + availableUrls + CUSTOM_URL_OPTION).toTypedArray()
-        summary = if (isUrlUpdated) "%s\\n网址列表已自动更新，请重启应用。" else "%s\\n切换网址后请重启应用。"
+        summary = if (isUrlUpdated) "%s\n网址列表已自动更新，请重启应用。" else "%s\n切换网址后请重启应用。"
         setDefaultValue(AUTO_URL_OPTION)
         setOnPreferenceChangeListener { _, value ->
             if (value == CUSTOM_URL_OPTION && preferences.customBaseUrl == null) {
@@ -76,48 +75,47 @@ fun getPreferencesInternal(
     return arrayOf(
         urlPreference,
         customUrlPreference,
-    EditTextPreference(context).apply {
-        key = TITLE_BLACKLIST_PREF
-        title = "标题屏蔽关键词"
-        summary = titleBlacklistSummary(preferences.getString(TITLE_BLACKLIST_PREF, ""))
-        setOnPreferenceChangeListener { _, newValue ->
-            summary = titleBlacklistSummary(newValue as String)
-            true
-        }
-        dialogTitle = "标题屏蔽关键词"
-        setDefaultValue("")
-    },
-
-    EditTextPreference(context).apply {
-        key = BLACKLIST_MAX_SCAN_PAGES_PREF
-        title = "黑名单过滤最大扫描页数"
-        summary = maxScanPagesSummary(preferences.blacklistMaxScanPages)
-        setOnBindEditTextListener { editText ->
-            editText.inputType = InputType.TYPE_CLASS_NUMBER
-        }
-        setOnPreferenceChangeListener { _, newValue ->
-            val value = (newValue as String).toIntOrNull()
-            if (value == null || value < 1) {
-                Toast.makeText(context, "请输入不小于 1 的正整数。", Toast.LENGTH_SHORT).show()
-                false
-            } else {
-                summary = maxScanPagesSummary(value)
+        EditTextPreference(context).apply {
+            key = TITLE_BLACKLIST_PREF
+            title = "标题屏蔽关键词"
+            summary = titleBlacklistSummary(preferences.getString(TITLE_BLACKLIST_PREF, ""))
+            setOnPreferenceChangeListener { _, newValue ->
+                summary = titleBlacklistSummary(newValue as String)
                 true
             }
-        }
-        dialogTitle = "黑名单过滤最大扫描页数"
-        setDefaultValue(DEFAULT_MAX_SCAN_PAGES.toString())
-    },
+            dialogTitle = "标题屏蔽关键词"
+            setDefaultValue("")
+        },
 
-    SwitchPreferenceCompat(context).apply {
-        key = FILTER_SEARCH_RESULTS_PREF
-        title = "在搜索结果中使用标题屏蔽"
-        summary = "开启后，关键词、分类和标签搜索结果也会应用标题屏蔽关键词。"
-        setDefaultValue(true)
-    },
-)
+        EditTextPreference(context).apply {
+            key = BLACKLIST_MAX_SCAN_PAGES_PREF
+            title = "黑名单过滤最大扫描页数"
+            summary = maxScanPagesSummary(preferences.blacklistMaxScanPages)
+            setOnBindEditTextListener { editText ->
+                editText.inputType = InputType.TYPE_CLASS_NUMBER
+            }
+            setOnPreferenceChangeListener { _, newValue ->
+                val value = (newValue as String).toIntOrNull()
+                if (value == null || value < 1) {
+                    Toast.makeText(context, "请输入不小于 1 的正整数。", Toast.LENGTH_SHORT).show()
+                    false
+                } else {
+                    summary = maxScanPagesSummary(value)
+                    true
+                }
+            }
+            dialogTitle = "黑名单过滤最大扫描页数"
+            setDefaultValue(DEFAULT_MAX_SCAN_PAGES.toString())
+        },
+
+        SwitchPreferenceCompat(context).apply {
+            key = FILTER_SEARCH_RESULTS_PREF
+            title = "在搜索结果中使用标题屏蔽"
+            summary = "开启后，关键词、分类和标签搜索结果也会应用标题屏蔽关键词。"
+            setDefaultValue(true)
+        },
+    )
 }
-
 
 val SharedPreferences.baseUrl: String
     get() {
@@ -164,7 +162,7 @@ val SharedPreferences.blacklistMaxScanPages: Int
         ?.takeIf { it >= 1 }
         ?: DEFAULT_MAX_SCAN_PAGES
 
-private fun customUrlSummary(url: String?) = url?.let { "$it\\n保存后自动使用此网址，重启应用生效。" }
+private fun customUrlSummary(url: String?) = url?.let { "$it\n保存后自动使用此网址，重启应用生效。" }
     ?: "尚未设置。请输入完整的 HTTPS 网址，或直接输入域名。"
 
 private fun titleBlacklistSummary(value: String?) = value?.takeIf(String::isNotBlank)?.let { "$it\n$TITLE_BLACKLIST_SUMMARY" }
