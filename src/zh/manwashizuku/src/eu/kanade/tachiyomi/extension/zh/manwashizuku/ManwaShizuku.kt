@@ -16,6 +16,7 @@ import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
+import keiyoushi.utils.attrOrNull
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.toJsonRequestBody
@@ -63,7 +64,9 @@ abstract class ManwaShizuku :
 
     private val rewriteOctetStream: Interceptor = Interceptor { chain ->
         val request = chain.request()
-        val isImageHost = IMAGE_HOST_ENTRIES.any { it.substringBefore(":") == request.url.host }
+        // The site rotates cover CDNs independently of the chapter image hosts.
+        val isEncryptedImage = "en_images" in request.url.pathSegments
+        val isImageHost = isEncryptedImage || IMAGE_HOST_ENTRIES.any { it.substringBefore(":") == request.url.host }
 
         // The CDN can reject non-browser requests before the decryptor sees the body.
         val imageRequest = if (isImageHost) {
@@ -75,7 +78,7 @@ abstract class ManwaShizuku :
             request
         }
         val response: Response = chain.proceed(imageRequest)
-        if (!isImageHost || !response.request.url.encodedPath.endsWith(".jpg", ignoreCase = true) || !response.isSuccessful) {
+        if (!isImageHost || !response.isSuccessful) {
             return@Interceptor response
         }
         // Chapter images can be AES-encrypted, but covers can be ordinary images.
@@ -87,12 +90,15 @@ abstract class ManwaShizuku :
         val isPng = prefix.size >= 4 &&
             prefix[0] == 0x89.toByte() && prefix[1] == 0x50.toByte() &&
             prefix[2] == 0x4E.toByte() && prefix[3] == 0x47.toByte()
+        val isGif = prefix.size >= 3 &&
+            prefix[0] == 0x47.toByte() && prefix[1] == 0x49.toByte() && prefix[2] == 0x46.toByte()
         val isWebp = prefix.size >= 12 &&
             prefix[0] == 0x52.toByte() && prefix[1] == 0x49.toByte() &&
             prefix[2] == 0x46.toByte() && prefix[3] == 0x46.toByte() &&
             prefix[8] == 0x57.toByte() && prefix[9] == 0x45.toByte() &&
             prefix[10] == 0x42.toByte() && prefix[11] == 0x50.toByte()
-        if (prefix.size < 16 || isJpeg || isPng || isWebp) return@Interceptor response
+        if (prefix.size < 16 || isJpeg || isPng || isGif || isWebp) return@Interceptor response
+        if (!isEncryptedImage && !response.request.url.encodedPath.endsWith(".jpg", ignoreCase = true)) return@Interceptor response
         val iv = source.readByteArray(16)
         val key = SecretKeySpec("0B6666A0-BB59-1381-B746-a0E4C9AC".toByteArray(), "AES")
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
@@ -151,7 +157,12 @@ abstract class ManwaShizuku :
         val document = client.get("$baseUrl${manga.url}", headers).asJsoup()
         manga.apply {
             title = document.selectFirst("#page-title")?.text() ?: document.title()
-            thumbnail_url = document.selectFirst("img.comic-cover")?.absUrl("src")
+            thumbnail_url = document.selectFirst("img.comic-cover")?.let { cover ->
+                val image = cover.attrOrNull("data-src")
+                    ?: cover.attrOrNull("data-original-cover")
+                    ?: cover.attrOrNull("src")
+                image?.let { document.baseUri().toHttpUrl().resolve(it)?.toString() }
+            }
             author = document.selectFirst("#author-container")?.text()
             artist = author
             genre = document.select("#tagsContainer span.tag").eachText().joinToString()
