@@ -170,7 +170,6 @@ private fun titleBlacklistSummary(value: String?) = value?.takeIf(String::isNotB
 
 private fun maxScanPagesSummary(value: Int) = "当前值：$value\n$BLACKLIST_MAX_SCAN_PAGES_SUMMARY"
 
-
 fun SharedPreferences.preferenceMigration() {
     val previousSelection = getString(URL_SELECTION_PREF, null)
     val defaultListChanged = getString(DEFAULT_LIST_PREF, null) != DEFAULT_LIST
@@ -250,7 +249,9 @@ private fun String.toValidBaseUrlOrNull(): String? {
     val parsed = (if ("://" in input) input else "https://$input").toHttpUrlOrNull() ?: return null
     if (parsed.scheme != "https" || parsed.username.isNotEmpty() || parsed.password.isNotEmpty() ||
         parsed.encodedPath != "/" || parsed.query != null || parsed.fragment != null
-    ) return null
+    ) {
+        return null
+    }
     return parsed.toString().removeSuffix("/")
 }
 
