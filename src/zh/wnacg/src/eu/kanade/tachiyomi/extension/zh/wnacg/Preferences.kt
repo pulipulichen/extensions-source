@@ -14,9 +14,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
-import kotlin.random.Random
 
-private const val DEFAULT_LIST = "https://www.wn07.cfd,https://www.wn07.shop,https://www.wn06.cfd,https://www.wn06.shop"
+private const val DEFAULT_LIST = "https://www.wn10.cfd,https://www.wn07.shop"
 
 fun getPreferencesInternal(
     context: Context,
@@ -129,7 +128,7 @@ fun SharedPreferences.Editor.setUrlList(urlList: String, selectedUrl: String?): 
 
     putString(URL_LIST_PREF, validUrlList.joinToString(","))
     val selectedIndex = validUrlList.indexOf(selectedUrl)
-    val newIndex = selectedIndex.takeIf { it >= 0 } ?: Random.nextInt(validUrlList.size)
+    val newIndex = selectedIndex.takeIf { it >= 0 } ?: 0
     return putString(URL_INDEX_PREF, newIndex.toString())
 }
 
