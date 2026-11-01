@@ -1,0 +1,85 @@
+name: Build Manwa Shizuku APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/zh/manwashizuku/**"
+      - ".github/workflows/build_manwa_shizuku.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-manwa-shizuku-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository == 'pulipulichen/extensions-source'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 25
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Restore fixed signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY" || -z "$ALIAS" || -z "$KEY_STORE_PASSWORD" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Set SIGNING_KEY, ALIAS, KEY_STORE_PASSWORD and KEY_PASSWORD secrets to ensure persistent signing."
+            exit 1
+          fi
+          printf "%s" "$SIGNING_KEY" | base64 --decode > signingkey.jks
+          chmod 600 signingkey.jks
+
+      - name: Build and lint only Manwa Shizuku
+        env:
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :src:zh:manwashizuku:assembleRelease :src:zh:manwashizuku:lintRelease --no-daemon
+
+      - name: Verify release APK signature
+        run: |
+          set -euo pipefail
+          APK="$(find src/zh/manwashizuku/build/outputs/apk/release -maxdepth 1 -name "*.apk" -print -quit)"
+          test -n "$APK"
+          SIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner -type f | sort -V | tail -n 1)"
+          test -n "$SIGNER"
+          "$SIGNER" verify --verbose "$APK"
+
+      - name: Publish APK to Releases (no Actions artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK="$(find src/zh/manwashizuku/build/outputs/apk/release -maxdepth 1 -name "*.apk" -print -quit)"
+          TAG="manwa-shizuku-${GITHUB_RUN_NUMBER}-${GITHUB_SHA:0:7}"
+          gh release create "$TAG" "$APK" \
+            --target "$GITHUB_SHA" \
+            --title "Manwa Shizuku (漫蛙新版) - Build ${GITHUB_RUN_NUMBER}" \
+            --notes "Experimental Manwa Shizuku extension with selectable manwadz.cc / mwmwbu.cc and custom Base URL. Built from commit ${GITHUB_SHA}. Signed using fixed repository keystore." \
+            --prerelease
+          echo "Published at: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f signingkey.jks

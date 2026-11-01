@@ -29,6 +29,7 @@ env:
 
 jobs:
   prepare:
+    if: github.repository == 'keiyoushi/extensions-source'
     name: Prepare job
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -71,6 +72,7 @@ jobs:
           python ./.github/scripts/generate-build-matrices.py "$BASE_SHA"
 
   build:
+    if: github.repository == 'keiyoushi/extensions-source'
     name: Populate Gradle cache
     runs-on: ubuntu-latest
     timeout-minutes: 30
