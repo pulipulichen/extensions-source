@@ -26,6 +26,7 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.Buffer
 import okio.buffer
 import okio.cipherSource
 import java.time.LocalDate
@@ -60,11 +61,10 @@ abstract class ManwaShizuku :
     private val rewriteOctetStream: Interceptor = Interceptor { chain ->
         val response: Response = chain.proceed(chain.request())
         val imageHost = preferences.getString(IMAGE_HOST_KEY, IMAGE_HOST_ENTRIES[0])!!.substringBefore(":")
-        if (response.request.url.host != imageHost || !response.request.url.toString().endsWith(".jpg") || response.request.url.encodedPath.contains("/cover/")) {
+        if (response.request.url.host != imageHost || !response.request.url.encodedPath.endsWith(".jpg", ignoreCase = true) || !response.isSuccessful) {
             return@Interceptor response
         }
-        // Decrypt images in mangas
-        val source = response.body.source()
+        // Cover images are ordinary JPEGs, while chapter images may be AES-encrypted.\n        // Inspect the response magic bytes before attempting decryption.\n        val source = response.body.source()\n        source.request(16)\n        val prefix = source.buffer.snapshot().toByteArray()\n        if (prefix.size < 16 ||\n            (prefix[0] == 0xFF.toByte() && prefix[1] == 0xD8.toByte()) ||\n            (prefix[0] == 0x89.toByte() && prefix[1] == 0x50.toByte() && prefix[2] == 0x4E.toByte() && prefix[3] == 0x47.toByte()) ||\n            (prefix[0] == 0x52.toByte() && prefix[1] == 0x49.toByte() && prefix[2] == 0x46.toByte() && prefix[3] == 0x46.toByte() && prefix[8] == 0x57.toByte() && prefix[9] == 0x45.toByte() && prefix[10] == 0x42.toByte() && prefix[11] == 0x50.toByte())\n        ) return@Interceptor response
         val iv = source.readByteArray(16)
         val key = SecretKeySpec("0B6666A0-BB59-1381-B746-a0E4C9AC".toByteArray(), "AES")
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
