@@ -43,7 +43,7 @@ data class MangaDto(
     fun toSManga(): SManga = SManga.create().apply {
         title = this@MangaDto.title
         thumbnail_url = pic ?: cover
-        setUrlWithoutDomain(this@MangaDto.url)
+        url = this@MangaDto.url
     }
 }
 
