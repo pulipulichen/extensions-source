@@ -114,7 +114,7 @@ abstract class ManwaShizuku :
         val body = MangaPayload(page = PagePayload(page), sort = 3)
             .toJsonRequestBody(json)
         val response = client.post("$baseUrl/api/cate/", headers, body).parseAs<MangaResponseDto>()
-        val mangas = response.data.list.map { it.toSManga() }
+        val mangas = response.data.list.map { it.toSManga(baseUrl) }
         val pages = (response.data.total + 35) / 36
         return MangasPage(mangas, page < pages)
     }
@@ -123,7 +123,7 @@ abstract class ManwaShizuku :
         val body = MangaPayload(page = PagePayload(page), sort = 0)
             .toJsonRequestBody(json)
         val response = client.post("$baseUrl/api/cate/", headers, body).parseAs<MangaResponseDto>()
-        val mangas = response.data.list.map { it.toSManga() }
+        val mangas = response.data.list.map { it.toSManga(baseUrl) }
         val pages = (response.data.total + 35) / 36
         return MangasPage(mangas, page < pages)
     }
@@ -136,7 +136,7 @@ abstract class ManwaShizuku :
             .addQueryParameter("keyword", query)
             .build()
         val response = client.get(url, headers).parseAs<MangaResponseDto>()
-        val mangas = response.data.list.map { it.toSManga() }
+        val mangas = response.data.list.map { it.toSManga(baseUrl) }
         val pages = (response.data.total + 19) / 20
         return MangasPage(mangas, page < pages)
     }
@@ -161,7 +161,7 @@ abstract class ManwaShizuku :
                 val image = cover.attrOrNull("data-src")
                     ?: cover.attrOrNull("data-original-cover")
                     ?: cover.attrOrNull("src")
-                image?.let { document.baseUri().toHttpUrl().resolve(it)?.toString() }
+                image?.toCoverUrl(document.baseUri())
             }
             author = document.selectFirst("#author-container")?.text()
             artist = author

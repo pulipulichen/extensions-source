@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.extension.zh.manwashizuku
 import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Serializable
 data class MangaPayload(
@@ -40,9 +41,9 @@ data class MangaDto(
     val cover: String? = null,
     val url: String,
 ) {
-    fun toSManga(): SManga = SManga.create().apply {
+    fun toSManga(baseUrl: String): SManga = SManga.create().apply {
         title = this@MangaDto.title
-        thumbnail_url = pic ?: cover
+        thumbnail_url = (pic?.takeIf { it.isNotBlank() } ?: cover)?.toCoverUrl(baseUrl)
         url = this@MangaDto.url
     }
 }
@@ -61,3 +62,9 @@ data class PaginationDto(
     @SerialName("current_page") val currentPage: Int,
     @SerialName("total_pages") val totalPages: Int,
 )
+
+// J2K caches cover bytes before decoding, including encrypted bytes from older builds.
+internal fun String.toCoverUrl(baseUrl: String): String? = baseUrl.toHttpUrl().resolve(this)?.newBuilder()
+    ?.fragment("manwa-cover-decoded-v4")
+    ?.build()
+    ?.toString()
