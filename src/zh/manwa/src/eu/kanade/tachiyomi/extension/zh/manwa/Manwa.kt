@@ -43,9 +43,9 @@ abstract class Manwa :
     private fun getTargetUrl(): String {
         val url = preferences.getString(APP_CUSTOMIZATION_URL_KEY, "")!!
         if (url.isNotBlank()) {
-            return url
+            return url.trim().trimEnd('/')
         }
-        return preferences.getString(MIRROR_KEY, MIRROR_ENTRIES[0])!!
+        return preferences.getString(MIRROR_KEY, MIRROR_ENTRIES[0])!!.trimEnd('/')
     }
 
     private val rewriteOctetStream: Interceptor = Interceptor { chain ->
@@ -79,6 +79,9 @@ abstract class Manwa :
                 url = element.attr("href")
                 thumbnail_url = element.selectFirst("img")?.attr("abs:data-original")
             }
+        }
+        if (mangas.isEmpty()) {
+            throw java.io.IOException("漫蛙排行榜未解析到漫画：$baseUrl/rank。网站可能已改版，请检查 #rankList_2 > a 选择器或切换镜像。")
         }
         return MangasPage(mangas, false)
     }
