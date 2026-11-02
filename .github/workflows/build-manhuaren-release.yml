@@ -24,8 +24,11 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
+          java-version: '25'
+      - name: Set up Android SDK without removed legacy tools package
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Build Manhuaren only
         run: |
           chmod +x gradlew
