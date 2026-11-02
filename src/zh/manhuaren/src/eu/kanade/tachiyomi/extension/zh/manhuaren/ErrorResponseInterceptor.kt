@@ -22,7 +22,7 @@ class ErrorResponseInterceptor(
         if (error != null) {
             // API errors do not necessarily mean that saved credentials are invalid.
             // Preserve them so users can retry and diagnose server-side failures.
-            throw IOException("漫畫人 API 請求失敗：${error}。已保留使用者 ID 與 Token；請稍後重試或檢查擴充套件設定。")
+            throw IOException("漫畫人 API 請求失敗：$error。已保留使用者 ID 與 Token；請稍後重試或檢查擴充套件設定。")
         }
 
         return response.newBuilder()
