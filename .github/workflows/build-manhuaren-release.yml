@@ -1,0 +1,52 @@
+name: Build Manhuaren APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/zh/manhuaren/**'
+      - '.github/workflows/build-manhuaren-release.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manhuaren-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Build Manhuaren only
+        run: |
+          chmod +x gradlew
+          ./gradlew :src:zh:manhuaren:assembleRelease --no-daemon
+      - name: Find APK
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          find src/zh/manhuaren/build/outputs/apk -type f -name '*.apk' -print
+          apk="$(find src/zh/manhuaren/build/outputs/apk -type f -name '*.apk' | head -n 1)"
+          test -n "$apk"
+          mkdir -p release
+          cp "$apk" release/tachiyomi-zh.manhuaren.apk
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="manhuaren-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" release/tachiyomi-zh.manhuaren.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Manhuaren APK build ${GITHUB_RUN_NUMBER}" \
+            --notes "Manhuaren extension APK. Built from main at ${GITHUB_SHA}. APK signing must be verified before upgrading an existing installation."
