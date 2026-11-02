@@ -323,8 +323,15 @@ abstract class WNACG :
         thumbnail_url = element.selectFirst("img")?.attrOrNull("src")?.toImageUrl()
     }
 
-    // Protocol-relative image urls, some with extra leading slashes
-    private fun String.toImageUrl() = "https://" + trimStart('/')
+    private fun String.toImageUrl(): String {
+        val url = trim()
+        return when {
+            url.startsWith("//") -> "https:$url"
+            url.startsWith("http://") || url.startsWith("https://") -> url
+            url.startsWith("/") -> "$baseUrl$url"
+            else -> "$baseUrl/$url"
+        }
+    }
 
     companion object {
         private const val CHAPTER_SELECTOR = "div.sr_compact a.tagshow[data-chid]"
