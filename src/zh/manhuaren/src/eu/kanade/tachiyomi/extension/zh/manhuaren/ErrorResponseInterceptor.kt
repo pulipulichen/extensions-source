@@ -17,13 +17,10 @@ class ErrorResponseInterceptor(private val baseUrl: String, private val preferen
 
         val body = response.body
         val content = body.string()
-        val hasError = runCatching { content.parseAs<ErrorResponse>() }.getOrNull()?.errorResponse != null
+        val error = runCatching { content.parseAs<ErrorResponse>() }.getOrNull()?.errorResponse
+        val hasError = error != null
         if (hasError) {
-            preferences.edit()
-                .remove(TOKEN_PREF)
-                .remove(USER_ID_PREF)
-                .apply()
-            throw IOException("请求出错，用户ID已自动清除。请尝试以下其一后再试：\n选项1：打开漫画人官方APP（不用登录账号）\n选项2：从其他设备拷贝用户ID和Token到本插件设置里")
+            // API errors do not necessarily mean that saved credentials are invalid.\n            // Preserve them so users can retry and diagnose server-side failures.\n            throw IOException("漫畫人 API 請求失敗：${error}。已保留使用者 ID 與 Token；請稍後重試或檢查擴充套件設定。")
         }
 
         return response.newBuilder()
